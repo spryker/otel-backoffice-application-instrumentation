@@ -10,6 +10,7 @@ namespace Spryker\Service\OtelBackofficeApplicationInstrumentation\OpenTelemetry
 use Exception;
 use OpenTelemetry\API\Trace\Propagation\TraceContextPropagator;
 use OpenTelemetry\API\Trace\Span;
+use OpenTelemetry\API\Trace\SpanInterface;
 use OpenTelemetry\API\Trace\SpanKind;
 use OpenTelemetry\API\Trace\StatusCode;
 use OpenTelemetry\Context\Context;
@@ -26,12 +27,32 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
     /**
      * @var string
      */
+    protected const METHOD_NAME = 'boot';
+    
+    /**
+     * @var string
+     */
     protected const SPAN_NAME_PLACEHOLDER = '%s %s';
 
     /**
      * @var string
      */
     protected const BACKOFFICE_APPLICATION_TRACE_ID_KEY = 'backoffice_application_trace_id';
+
+    /**
+     * @var string
+     */
+    protected const ERROR_MESSAGE = 'error_message';
+
+    /**
+     * @var string
+     */
+    protected const ERROR_CODE = 'error_code';
+
+    /**
+     * @var string
+     */
+    protected const ERROR_TEXT_PLACEHOLDER = 'Error: %s in %s on line %d';
 
     /**
      * @param \Spryker\Zed\OpenTelemetry\Business\Generator\Instrumentation\CachedInstrumentation $instrumentation
@@ -45,10 +66,13 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
     ): void {
         hook(
             class: BackofficeBootstrap::class,
-            function: 'boot',
-            pre: static function ($instance, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation, $request, $propagationKeys): void {
-                define('BACKOFFICE_TRACE_ID', uuid_create());
-                $input = [static::BACKOFFICE_APPLICATION_TRACE_ID_KEY => BACKOFFICE_TRACE_ID];
+            function: static::METHOD_NAME,
+            pre: static function ($instance, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation, $request): void {
+                if (!defined('OTEL_BACKOFFICE_TRACE_ID')) {
+                    define('OTEL_BACKOFFICE_TRACE_ID', uuid_create());
+                }
+
+                $input = [static::BACKOFFICE_APPLICATION_TRACE_ID_KEY => OTEL_BACKOFFICE_TRACE_ID];
                 TraceContextPropagator::getInstance()->inject($input);
 
                 $span = $instrumentation::getCachedInstrumentation()
@@ -81,7 +105,7 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
      *
      * @return \OpenTelemetry\API\Trace\Span
      */
-    protected static function handleError(ContextStorageScopeInterface $scope): Span
+    protected static function handleError(ContextStorageScopeInterface $scope): SpanInterface
     {
         $error = error_get_last();
 
@@ -94,13 +118,13 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
         $scope->detach();
         $span = Span::fromContext($scope->context());
 
-        if ($exception) {
+        if (isset($exception)) {
             $span->recordException($exception);
         }
 
-        $span->setAttribute(static::ERROR_MESSAGE, $exception ? $exception->getMessage() : '');
-        $span->setAttribute(static::ERROR_CODE, $exception ? $exception->getCode() : '');
-        $span->setStatus($exception ? StatusCode::STATUS_ERROR : StatusCode::STATUS_OK);
+        $span->setAttribute(static::ERROR_MESSAGE, isset($exception) ? $exception->getMessage() : '');
+        $span->setAttribute(static::ERROR_CODE, isset($exception) ? $exception->getCode() : '');
+        $span->setStatus(isset($exception) ? StatusCode::STATUS_ERROR : StatusCode::STATUS_OK);
 
         $span->end();
 

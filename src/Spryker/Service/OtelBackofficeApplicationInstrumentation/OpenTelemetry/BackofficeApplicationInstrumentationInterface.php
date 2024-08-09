@@ -18,7 +18,7 @@ interface BackofficeApplicationInstrumentationInterface
      *
      * @return void
      */
-    public function register(
+    public static function register(
         CachedInstrumentation $instrumentation,
         Request $request
     ): void;
