@@ -16,6 +16,8 @@ use OpenTelemetry\API\Trace\StatusCode;
 use OpenTelemetry\Context\Context;
 use OpenTelemetry\Context\ContextStorageScopeInterface;
 use OpenTelemetry\SemConv\TraceAttributes;
+use Spryker\Shared\Opentelemetry\Instrumentation\CachedInstrumentationInterface;
+use Spryker\Shared\Opentelemetry\Request\RequestProcessorInterface;
 use Spryker\Zed\Application\Communication\Bootstrap\BackofficeBootstrap;
 use Spryker\Zed\Opentelemetry\Business\Generator\Instrumentation\CachedInstrumentation;
 use Symfony\Component\HttpFoundation\Request;
@@ -55,14 +57,14 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
     protected const ERROR_TEXT_PLACEHOLDER = 'Error: %s in %s on line %d';
 
     /**
-     * @param \Spryker\Zed\OpenTelemetry\Business\Generator\Instrumentation\CachedInstrumentation $instrumentation
-     * @param \Symfony\Component\HttpFoundation\Request $request
+     * @param \Spryker\Shared\OpenTelemetry\Instrumentation\CachedInstrumentationInterface $instrumentation
+     * @param \Spryker\Shared\OpenTelemetry\Request\RequestProcessorInterface $request
      *
      * @return void
      */
     public static function register(
-        CachedInstrumentation $instrumentation,
-        Request $request
+        CachedInstrumentationInterface $instrumentation,
+        RequestProcessorInterface $request
     ): void {
         hook(
             class: BackofficeBootstrap::class,
@@ -77,13 +79,13 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
 
                 $span = $instrumentation::getCachedInstrumentation()
                     ->tracer()
-                    ->spanBuilder(static::formatSpanName($request))
+                    ->spanBuilder(static::formatSpanName($request->getRequest()))
                     ->setSpanKind(SpanKind::KIND_SERVER)
                     ->setAttribute(TraceAttributes::CODE_FUNCTION, $function)
                     ->setAttribute(TraceAttributes::CODE_NAMESPACE, $class)
                     ->setAttribute(TraceAttributes::CODE_FILEPATH, $filename)
                     ->setAttribute(TraceAttributes::CODE_LINENO, $lineno)
-                    ->setAttribute(TraceAttributes::URL_QUERY, $request->getQueryString())
+                    ->setAttribute(TraceAttributes::URL_QUERY, $request->getRequest()->getQueryString())
                     ->startSpan();
 
                 Context::storage()->attach($span->storeInContext(Context::getCurrent()));
