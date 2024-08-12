@@ -19,7 +19,6 @@ use OpenTelemetry\SemConv\TraceAttributes;
 use Spryker\Shared\Opentelemetry\Instrumentation\CachedInstrumentationInterface;
 use Spryker\Shared\Opentelemetry\Request\RequestProcessorInterface;
 use Spryker\Zed\Application\Communication\Bootstrap\BackofficeBootstrap;
-use Spryker\Zed\Opentelemetry\Business\Generator\Instrumentation\CachedInstrumentation;
 use Symfony\Component\HttpFoundation\Request;
 use Throwable;
 use function OpenTelemetry\Instrumentation\hook;
@@ -30,7 +29,7 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
      * @var string
      */
     protected const METHOD_NAME = 'boot';
-    
+
     /**
      * @var string
      */
@@ -57,8 +56,8 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
     protected const ERROR_TEXT_PLACEHOLDER = 'Error: %s in %s on line %d';
 
     /**
-     * @param \Spryker\Shared\OpenTelemetry\Instrumentation\CachedInstrumentationInterface $instrumentation
-     * @param \Spryker\Shared\OpenTelemetry\Request\RequestProcessorInterface $request
+     * @param \Spryker\Shared\Opentelemetry\Instrumentation\CachedInstrumentationInterface $instrumentation
+     * @param \Spryker\Shared\Opentelemetry\Request\RequestProcessorInterface $request
      *
      * @return void
      */
@@ -66,10 +65,15 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
         CachedInstrumentationInterface $instrumentation,
         RequestProcessorInterface $request
     ): void {
+        // phpcs:disable
         hook(
             class: BackofficeBootstrap::class,
             function: static::METHOD_NAME,
             pre: static function ($instance, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation, $request): void {
+                if ($instrumentation::getCachedInstrumentation() === null || $request->getRequest() === null) {
+                    return;
+                }
+
                 if (!defined('OTEL_BACKOFFICE_TRACE_ID')) {
                     define('OTEL_BACKOFFICE_TRACE_ID', uuid_create());
                 }
@@ -100,16 +104,18 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
                 static::handleError($scope);
             },
         );
+        // phpcs:enable
     }
 
     /**
      * @param \OpenTelemetry\Context\ContextStorageScopeInterface $scope
      *
-     * @return \OpenTelemetry\API\Trace\Span
+     * @return \OpenTelemetry\API\Trace\SpanInterface
      */
     protected static function handleError(ContextStorageScopeInterface $scope): SpanInterface
     {
         $error = error_get_last();
+        $exception = null;
 
         if (is_array($error) && in_array($error['type'], [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_PARSE], true)) {
             $exception = new Exception(
@@ -120,13 +126,13 @@ class BackofficeApplicationInstrumentation implements BackofficeApplicationInstr
         $scope->detach();
         $span = Span::fromContext($scope->context());
 
-        if (isset($exception)) {
+        if ($exception !== null) {
             $span->recordException($exception);
         }
 
-        $span->setAttribute(static::ERROR_MESSAGE, isset($exception) ? $exception->getMessage() : '');
-        $span->setAttribute(static::ERROR_CODE, isset($exception) ? $exception->getCode() : '');
-        $span->setStatus(isset($exception) ? StatusCode::STATUS_ERROR : StatusCode::STATUS_OK);
+        $span->setAttribute(static::ERROR_MESSAGE, $exception !== null ? $exception->getMessage() : '');
+        $span->setAttribute(static::ERROR_CODE, $exception !== null ? $exception->getCode() : '');
+        $span->setStatus($exception !== null ? StatusCode::STATUS_ERROR : StatusCode::STATUS_OK);
 
         $span->end();
 
