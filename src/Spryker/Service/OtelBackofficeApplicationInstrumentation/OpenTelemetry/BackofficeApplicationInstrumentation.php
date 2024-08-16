@@ -94,7 +94,6 @@ class BackofficeApplicationInstrumentation
                 Context::storage()->attach($span->storeInContext(Context::getCurrent()));
             },
             post: static function ($instance, array $params, $returnValue, ?Throwable $exception): void {
-                $context = Context::storage();
                 $scope = Context::storage()->scope();
 
                 if ($scope === null) {
@@ -103,7 +102,7 @@ class BackofficeApplicationInstrumentation
 
                 $span = static::handleError($scope);
 
-                $span->end();
+//                $span->end();
             },
         );
         // phpcs:enable
