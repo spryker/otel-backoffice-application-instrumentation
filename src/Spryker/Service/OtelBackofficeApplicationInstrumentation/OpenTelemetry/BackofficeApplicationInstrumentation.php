@@ -16,7 +16,10 @@ use OpenTelemetry\API\Trace\StatusCode;
 use OpenTelemetry\Context\Context;
 use OpenTelemetry\Context\ContextStorageScopeInterface;
 use OpenTelemetry\SemConv\TraceAttributes;
+use Spryker\Service\Opentelemetry\Storage\AttributesStorage;
+use Spryker\Shared\Opentelemetry\Instrumentation\CachedInstrumentation;
 use Spryker\Shared\Opentelemetry\Instrumentation\CachedInstrumentationInterface;
+use Spryker\Shared\Opentelemetry\Request\RequestProcessor;
 use Spryker\Shared\Opentelemetry\Request\RequestProcessorInterface;
 use Spryker\Zed\Application\Communication\Bootstrap\BackofficeBootstrap;
 use Symfony\Component\HttpFoundation\Request;
@@ -56,15 +59,13 @@ class BackofficeApplicationInstrumentation
     protected const ERROR_TEXT_PLACEHOLDER = 'Error: %s in %s on line %d';
 
     /**
-     * @param \Spryker\Shared\Opentelemetry\Instrumentation\CachedInstrumentationInterface $instrumentation
-     * @param \Spryker\Shared\Opentelemetry\Request\RequestProcessorInterface $request
-     *
      * @return void
      */
-    public static function register(
-        CachedInstrumentationInterface $instrumentation,
-        RequestProcessorInterface $request
-    ): void {
+    public static function register(): void
+    {
+        $instrumentation = new CachedInstrumentation();
+        $request = new RequestProcessor();
+
         // phpcs:disable
         hook(
             class: BackofficeBootstrap::class,
@@ -96,13 +97,16 @@ class BackofficeApplicationInstrumentation
                 Context::storage()->attach($span->storeInContext(Context::getCurrent()));
             },
             post: static function ($instance, array $params, $returnValue, ?Throwable $exception): void {
+                $context = Context::storage();
                 $scope = Context::storage()->scope();
 
                 if ($scope === null) {
                     return;
                 }
 
-                static::handleError($scope);
+                $span = static::handleError($scope);
+
+                $span->end();
             },
         );
         // phpcs:enable
@@ -134,8 +138,6 @@ class BackofficeApplicationInstrumentation
         $span->setAttribute(static::ERROR_MESSAGE, $exception !== null ? $exception->getMessage() : '');
         $span->setAttribute(static::ERROR_CODE, $exception !== null ? $exception->getCode() : '');
         $span->setStatus($exception !== null ? StatusCode::STATUS_ERROR : StatusCode::STATUS_OK);
-
-        $span->end();
 
         return $span;
     }
