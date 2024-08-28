@@ -10,15 +10,16 @@ namespace Spryker\Service\OtelBackofficeApplicationInstrumentation\OpenTelemetry
 use Exception;
 use OpenTelemetry\API\Trace\Propagation\TraceContextPropagator;
 use OpenTelemetry\API\Trace\Span;
-use OpenTelemetry\API\Trace\SpanInterface;
 use OpenTelemetry\API\Trace\SpanKind;
 use OpenTelemetry\API\Trace\StatusCode;
 use OpenTelemetry\Context\Context;
 use OpenTelemetry\Context\ContextStorageScopeInterface;
+use OpenTelemetry\SDK\Trace\ReadableSpanInterface;
 use OpenTelemetry\SemConv\TraceAttributes;
 use Spryker\Shared\Opentelemetry\Instrumentation\CachedInstrumentation;
 use Spryker\Shared\Opentelemetry\Request\RequestProcessor;
 use Spryker\Zed\Application\Communication\Bootstrap\BackofficeBootstrap;
+use Spryker\Zed\Opentelemetry\Business\Generator\SpanFilter\SamplerSpanFilter;
 use Symfony\Component\HttpFoundation\Request;
 use Throwable;
 use function OpenTelemetry\Instrumentation\hook;
@@ -60,15 +61,16 @@ class BackofficeApplicationInstrumentation
      */
     public static function register(): void
     {
-        $instrumentation = new CachedInstrumentation();
         $request = new RequestProcessor();
 
         // phpcs:disable
         hook(
             class: BackofficeBootstrap::class,
             function: static::METHOD_NAME,
-            pre: static function ($instance, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($instrumentation, $request): void {
-                if ($instrumentation::getCachedInstrumentation() === null || $request->getRequest() === null) {
+            pre: static function ($instance, array $params, string $class, string $function, ?string $filename, ?int $lineno) use ($request): void {
+                putenv('OTEL_SERVICE_NAME=BACKOFFICE');
+                $instrumentation = CachedInstrumentation::getCachedInstrumentation();
+                if ($instrumentation === null || $request->getRequest() === null) {
                     return;
                 }
 
@@ -79,7 +81,7 @@ class BackofficeApplicationInstrumentation
                 $input = [static::BACKOFFICE_APPLICATION_TRACE_ID_KEY => OTEL_BACKOFFICE_TRACE_ID];
                 TraceContextPropagator::getInstance()->inject($input);
 
-                $span = $instrumentation::getCachedInstrumentation()
+                $span = $instrumentation
                     ->tracer()
                     ->spanBuilder(static::formatSpanName($request->getRequest()))
                     ->setSpanKind(SpanKind::KIND_SERVER)
@@ -101,8 +103,8 @@ class BackofficeApplicationInstrumentation
                 }
 
                 $span = static::handleError($scope);
-
-//                $span->end();
+                SamplerSpanFilter::filter($span, true);
+                //No ending of span due to the fact that ApplicationInstrumentation will end the span and add custom params after.
             },
         );
         // phpcs:enable
@@ -111,9 +113,9 @@ class BackofficeApplicationInstrumentation
     /**
      * @param \OpenTelemetry\Context\ContextStorageScopeInterface $scope
      *
-     * @return \OpenTelemetry\API\Trace\SpanInterface
+     * @return \OpenTelemetry\SDK\Trace\ReadableSpanInterface
      */
-    protected static function handleError(ContextStorageScopeInterface $scope): SpanInterface
+    protected static function handleError(ContextStorageScopeInterface $scope): ReadableSpanInterface
     {
         $error = error_get_last();
         $exception = null;
@@ -135,6 +137,7 @@ class BackofficeApplicationInstrumentation
         $span->setAttribute(static::ERROR_CODE, $exception !== null ? $exception->getCode() : '');
         $span->setStatus($exception !== null ? StatusCode::STATUS_ERROR : StatusCode::STATUS_OK);
 
+        /** @var \OpenTelemetry\SDK\Trace\ReadableSpanInterface $span */
         return $span;
     }
 
